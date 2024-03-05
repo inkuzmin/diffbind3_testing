@@ -1,0 +1,183 @@
+<tool id="diffbind3" name="DiffBind3" version="3.8.0+galaxy10">
+    <description> differential binding analysis of ChIP-Seq peak data (beta)</description>
+    <requirements>
+        <requirement type="package" version="3.8.0">bioconductor-diffbind</requirement>
+        <requirement type="package" version="4.2.2">r-base</requirement>
+        <requirement type="package" version="1.8.0">r-jsonlite</requirement>
+        <requirement type="package" version="1.20.3">r-getopt</requirement>
+    </requirements>
+    <stdio>
+        <regex match="Execution halted"
+           source="both"
+           level="fatal"
+           description="Execution halted." />
+        <regex match="Input-Error 01"
+           source="both"
+           level="fatal"
+           description="Error in your input parameters: Make sure you only apply factors to selected samples." />
+        <regex match="Error in"
+           source="both"
+           level="fatal"
+           description="An undefined error occured, please check your input carefully and contact your administrator." />
+    </stdio>
+    <version_command><![CDATA[
+echo $(R --version | grep version | grep -v GNU)", DiffBind version" $(R --vanilla --slave -e "library(DiffBind); cat(sessionInfo()\$otherPkgs\$DiffBind\$Version)" 2> /dev/null | grep -v -i "WARNING: ")", jsonlite version" $(R --vanilla --slave -e "library(jsonlite); cat(sessionInfo()\$otherPkgs\$jsonlite\$Version)" 2> /dev/null | grep -v -i "WARNING: ")
+    ]]></version_command>
+    <command><![CDATA[
+
+mkdir -p reads &&
+mkdir -p peaks &&
+
+#for $file in $peak_list
+    #set $file_path = 'peaks/' + $file.element_identifier
+    ln -s '$file' '$file_path' &&
+#end for
+
+#for $file in $bam_list
+    #set $file_path = 'reads/' + $file.element_identifier
+    ln -s '$file' '$file_path' &&
+#end for
+
+Rscript '$__tool_directory__/diffbind.R'
+
+    -i '$infile'
+    -t $th
+    -p '$plots'
+
+    -n $scorecol
+
+    #if $lowerbetter:
+        -l "$lowerbetter"
+    #end if
+
+    #if $summits:
+        -s "$summits"
+    #end if
+
+    --filter $filter
+    --mincount $mincount
+
+
+    #if $design_formula.design:
+        --design "$design_formula.design"
+    #end if
+
+    #if $design_formula.design == 'True':
+        --formula "$design_formula.formula"
+    #end if
+
+    #if $custompeaks:
+        --custompeaks '$custompeaks'
+    #end if
+
+    #if $out.binding_matrix:
+        -b
+    #end if
+
+    #if $out.rdata:
+        -r
+    #end if
+
+    #if $out.analysis_info:
+        -a
+    #end if
+
+    #if $out.rscript:
+        && cp '$__tool_directory__/diffbind.R' '$rscript'
+    #end if
+]]>
+    </command>
+
+    <inputs>
+        <param name="infile" type="data" format="csv" multiple="false" label="Sample sheet" help=""/>
+
+        
+        <param name="peak_list" type="data" format="bed" multiple="true" label="Peak files" help="Result of your Peak calling experiment"/>
+        
+        <param name="bam_list" type="data" format="bam" multiple="true" label="Read and Control BAM files" help=""/>
+
+        <param optional="True" name="custompeaks" type="data" format="tabular" multiple="false" label="Custom consensus peakset" help=""/>
+
+        <param name="scorecol" type="integer" min="0" value="5" label="Score Column" help="Column in peak files that contains peak scores. Default: 5">
+        </param>
+        
+        <param name="lowerbetter" type="boolean" truevalue="True" falsevalue="" checked="False" label="Lower score is better?" help="DiffBind by default assumes that a higher score indicates a better peak, for example narrowPeaks -log10pvalue. If this is not the case, for example if the score is a p-value or FDR, set this option to Yes. Default: No" />
+        
+        <param name="summits" type="integer" min="0" optional="True" label="Summits" help="Extend peaks Nbp up- and downstream of the summit. For punctate peaks it is advisable to extend (e.g. 250bp), see the DiffBind User Guide. NB! Ignored and set to TRUE if custom peaks are provided.">
+            <sanitizer>
+                <valid initial="string.digits"/>
+            </sanitizer>
+        </param>
+
+        <param name="filter" type="integer" min="0" value="1" label="Filter" help="The new default for this parameter is 1 and is based on RPKM values; previously it was set to 0 and was based on read counts." />
+
+        <param name="mincount" type="integer" min="0" value="0" label="Minimum read count" help="This is a new parameter representing a minimum read count value. The default is 0 now; to get the previous behaviour, set it to 1." />
+
+        <param name="th" type="float" value="0.05" min="0" max="1" label="FDR Threshold" help="Significance threshold; all sites with FDR less than or equal to this value will be included in the output. A value of 1 will output all binding sites. Default: 0.05"/>
+
+        <conditional name="design_formula">
+            <param name="design" type="select" label="Design">
+                <option value="True" selected="True">Yes</option>
+                <option value="False">No</option>
+            </param>
+
+            <when value="True">
+                <param name="formula" type="text" value="" label="Formula" help="Design formula. Starts with ~ (e.g. ~Tissue + Condition). If not specified, a design will be generated automatically." />
+            </when>
+
+            <when value="False">
+            </when>
+        </conditional>
+
+
+        <!-- Output Options -->
+        <section name="out" expanded="false" title="Output Options">
+            <param name="pdf" type="boolean" truevalue="True" falsevalue="" checked="False" label="Visualising the analysis results" help="output an additional PDF file" />
+            <param name="binding_matrix" type="boolean" truevalue="True" falsevalue="" checked="False" label="Output binding affinity matrix?" help="Output a table of the binding scores" />
+            <param name="rdata" type="boolean" truevalue="True" falsevalue="" checked="False" label="Output RData file?" help="Output all the data used by R to construct the plots and tables, can be loaded into R. Default: No"/>
+            <param name="rscript" type="boolean" truevalue="True" falsevalue="False" checked="False" label="Output Rscript?" help="If this option is set to Yes, the Rscript used will be provided as a text file in the output. Default: No"/>
+            <param name="analysis_info" type="boolean" truevalue="True" falsevalue="False" checked="False" label="Output analysis info?" help="If this option is set to Yes, information from the dba.count and dba.analyze commmands will be output in a text file. Default: No"/>
+        </section>
+    </inputs>
+
+    <outputs>
+        <data name="report" format="txt">
+            <discover_datasets pattern="__designation__" format="csv" directory="reports" visible="true" />
+        </data>
+        <data name="plots" format="pdf" label="${tool.name} on ${on_string}: Plots">
+            <filter>out['pdf']</filter>
+        </data>
+        <data name="binding_matrix" format="tabular" from_work_dir="bmatrix.tab" label="${tool.name} on ${on_string}: Binding matrix">
+            <filter>out['binding_matrix']</filter>
+        </data>
+        <data name="rdata" format="rdata" from_work_dir="DiffBind_analysis.RData" label="${tool.name} on ${on_string}: RData file">
+            <filter>out['rdata']</filter>
+        </data>
+        <data name="rscript" format="txt" label="${tool.name} on ${on_string}: Rscript">
+            <filter>out['rscript']</filter>
+        </data>
+        <data name="analysis_info" format="txt" from_work_dir="DiffBind_analysis_info.txt" label="${tool.name} on ${on_string}: Analysis info">
+            <filter>out['analysis_info']</filter>
+        </data>
+    </outputs>
+
+    <help><![CDATA[
+
+**References**
+
+DiffBind Authors:  Rory Stark, Gordon Brown (2011)
+Original wrapper authors: Bjoern Gruening, Pavankumar Videm
+
+.. _DiffBind: https://bioconductor.org/packages/release/bioc/html/DiffBind.html
+.. _`Bioconductor package`: https://bioconductor.org/packages/release/bioc/html/DiffBind.html
+.. _`DiffBind User Guide`: https://bioconductor.org/packages/release/bioc/vignettes/DiffBind/inst/doc/DiffBind.pdf
+.. _`Bioconductor post`: https://support.bioconductor.org/p/69924/
+.. _here: https://galaxyproject.org/learn/datatypes/#interval
+.. _`Biostars post`: https://www.biostars.org/p/84686/
+
+]]>
+    </help>
+    <citations>
+        <citation type="doi">doi:10.1038/nature10730</citation>
+    </citations>
+</tool>
